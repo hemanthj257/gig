@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Medical Condition Detection</title>
+    <style>
+        body { 
+            font-family: Arial; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px;
+        }
+        .container { 
+            text-align: center; 
+        }
+        .video-container {
+            margin: 20px auto;
+            width: 640px;
+            height: 480px;
+            border: 1px solid #ccc;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        .mode-selector {
+            margin: 20px 0;
+        }
+        .mode-selector button {
+            padding: 10px 20px;
+            margin: 0 10px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            background: #fff;
+            border-radius: 5px;
+        }
+        .mode-selector button:hover {
+            background: #f0f0f0;
+        }
+        .active {
+            background: #e0e0e0 !important;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Medical Condition Detection</h1>
+        
+        <div class="controls">
+            <select id="detection-type" onchange="updateInterface()">
+                <option value="eye">Eye Disease Detection</option>
+                <option value="skin">Acne Detection</option>
+                <option value="jaundice">Jaundice Detection</option>
+                <option value="cyanosis">Cyanosis Detection</option>
+                <option value="drooping">Facial Drooping Detection</option>
+            </select>
+
+            <div class="mode-selector">
+                <button id="camera-btn" onclick="setMode('camera')">Use Camera</button>
+                <button id="upload-btn" onclick="setMode('upload')">Upload Image</button>
+            </div>
+        </div>
+
+        <div id="video-container" class="video-container">
+            <video id="video" width="640" height="480" autoplay></video>
+            <canvas id="canvas" width="640" height="480" style="display: none;"></canvas>
+        </div>
+
+        <div id="upload-container" style="display: none;">
+            <input type="file" id="image-upload" accept="image/*">
+            <button onclick="analyzeImage()">Analyze Image</button>
+            <div id="preview" style="margin: 20px;">
+                <img id="preview-image" style="max-width: 640px; display: none;">
+            </div>
+        </div>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let stream = null;
+        let intervalId = null;
+        let currentMode = 'camera';
+
+        async function startVideo() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                document.getElementById('result').textContent = 'Error accessing camera. Please check permissions.';
+            }
+        }
+
+        function stopVideo() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+        }
+
+        function setMode(mode) {
+            currentMode = mode;
+            stopVideo();
+            
+            // Update button styles
+            document.getElementById('camera-btn').classList.toggle('active', mode === 'camera');
+            document.getElementById('upload-btn').classList.toggle('active', mode === 'upload');
+            
+            // Update container visibility
+            document.getElementById('video-container').style.display = mode === 'camera' ? 'block' : 'none';
+            document.getElementById('upload-container').style.display = mode === 'upload' ? 'block' : 'none';
+            
+            if (mode === 'camera') {
+                startDetection();
+            }
+        }
+
+        function updateInterface() {
+            document.getElementById('result').textContent = '';
+            document.getElementById('preview-image').style.display = 'none';
+            setMode(currentMode);
+        }
+
+        async function analyzeImage() {
+            const fileInput = document.getElementById('image-upload');
+            const preview = document.getElementById('preview-image');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select an image first');
+                return;
+            }
+
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'block';
+
+            const formData = new FormData();
+            formData.append('image', file);
+            formData.append('type', document.getElementById('detection-type').value);
+
+            try {
+                const response = await fetch('/analyze_image', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                document.getElementById('result').textContent = data.result;
+            } catch (err) {
+                console.error('Error analyzing image:', err);
+                document.getElementById('result').textContent = 'Error analyzing image';
+            }
+        }
+
+        async function startDetection() {
+            await startVideo();
+            
+            intervalId = setInterval(() => {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                canvas.toBlob(async (blob) => {
+                    const formData = new FormData();
+                    formData.append('frame', blob);
+                    formData.append('type', document.getElementById('detection-type').value);
+
+                    try {
+                        const response = await fetch('/detect', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const data = await response.json();
+                        document.getElementById('result').textContent = data.result;
+                    } catch (err) {
+                        console.error('Error detecting:', err);
+                    }
+                }, 'image/jpeg');
+            }, 1000);
+        }
+
+        // Initialize with camera mode
+        setMode('camera');
+    </script>
+</body>
+</html>
