@@ -5,6 +5,10 @@ from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input, decode_predictions
 import os
 from scipy.stats import entropy
+import joblib
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from model import predict_diabetes
 
 # Remove dlib import and use OpenCV's face detection instead
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -20,6 +24,26 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Initialize MobileNetV2 for skin detection
 skin_model = MobileNetV2(weights='imagenet')
+
+# Load the diabetes model and scaler
+try:
+    diabetes_model = joblib.load('diabetes_model.joblib')
+    diabetes_scaler = joblib.load('diabetes_scaler.joblib')
+except:
+    # Train and save the model if not exists
+    from sklearn.linear_model import LogisticRegression
+    data = pd.read_csv("diabetes.csv")
+    X = data.drop("Outcome", axis=1)
+    y = data["Outcome"]
+    
+    diabetes_scaler = StandardScaler()
+    X_scaled = diabetes_scaler.fit_transform(X)
+    
+    diabetes_model = LogisticRegression()
+    diabetes_model.fit(X_scaled, y)
+    
+    joblib.dump(diabetes_model, 'diabetes_model.joblib')
+    joblib.dump(diabetes_scaler, 'diabetes_scaler.joblib')
 
 def detect_eyes(img):
     # Load OpenCV's pre-trained eye detector
@@ -39,8 +63,8 @@ def detect_eyes(img):
         red_mask = cv2.inRange(hsv, np.array([0, 120, 70]), np.array([10, 255, 255]))
         red_ratio = np.sum(red_mask > 0) / (w * h)
         if red_ratio > 0.1:
-            return "Red Eye Detected"
-    return "Normal Eyes"
+            return "Conjunctivitis (Pink Eye) Detected"
+    return "No Conjunctivitis Detected"
 
 def detect_jaundice(img):
     # Convert to HSV color space
@@ -217,6 +241,30 @@ def analyze_image():
         return jsonify({'error': f'Error processing image: {str(e)}'})
     
     return jsonify({'result': result})
+
+@app.route('/predict_diabetes', methods=['POST'])
+def predict_diabetes_route():
+    try:
+        data = request.json
+        prediction, probability = predict_diabetes(
+            data['gender'],
+            data['age'],
+            data['hypertension'],
+            data['heart_disease'],
+            data['smoking'],
+            data['bmi'],
+            data['HbA1c_level'],
+            data['blood_glucose']
+        )
+        
+        result = {
+            'result': "Patient has diabetes" if prediction == 1 else "Patient doesn't have diabetes",
+            'probability': f"{probability*100:.2f}%"
+        }
+        return jsonify(result)
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
     app.run(debug=True)
