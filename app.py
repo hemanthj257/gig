@@ -9,11 +9,13 @@ import joblib
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from model import predict_diabetes
+from arduino_controller import ArduinoController
 
 # Remove dlib import and use OpenCV's face detection instead
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
 app = Flask(__name__)
+arduino = ArduinoController()
 
 # Create upload folder
 UPLOAD_FOLDER = 'uploads'
@@ -176,6 +178,22 @@ def detect_facial_drooping(img):
     
     return "Possible Facial Drooping Detected" if asymmetry > 30 else "No Facial Drooping Detected"
 
+def handle_detection_result(result):
+    # Check if condition is detected
+    is_detected = (
+        isinstance(result, dict) and result.get('result', '').lower().find('has diabetes') != -1
+    ) or (
+        isinstance(result, str) and (
+            result.lower().find('detected') != -1 or
+            result.lower().find('moderate') != -1 or
+            result.lower().find('mild') != -1
+        )
+    )
+    
+    # Control Arduino LEDs
+    arduino.set_led(is_detected)
+    return result
+
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -206,6 +224,7 @@ def detect():
     elif detection_type == 'drooping':
         result = detect_facial_drooping(img)
     
+    result = handle_detection_result(result)
     return jsonify({'result': result})
 
 @app.route('/analyze_image', methods=['POST'])
@@ -240,6 +259,7 @@ def analyze_image():
     except Exception as e:
         return jsonify({'error': f'Error processing image: {str(e)}'})
     
+    result = handle_detection_result(result)
     return jsonify({'result': result})
 
 @app.route('/predict_diabetes', methods=['POST'])
@@ -261,10 +281,15 @@ def predict_diabetes_route():
             'result': "Patient has diabetes" if prediction == 1 else "Patient doesn't have diabetes",
             'probability': f"{probability*100:.2f}%"
         }
+        result = handle_detection_result(result)
         return jsonify(result)
     
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+# Cleanup Arduino connection when app exits
+import atexit
+atexit.register(lambda: arduino.close())
 
 if __name__ == '__main__':
     app.run(debug=True)
