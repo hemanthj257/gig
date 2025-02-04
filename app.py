@@ -9,13 +9,12 @@ import joblib
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from model import predict_diabetes
-from arduino_controller import ArduinoController
+from speech_engine import speak_disease
 
 # Remove dlib import and use OpenCV's face detection instead
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
 app = Flask(__name__)
-arduino = ArduinoController()
 
 # Create upload folder
 UPLOAD_FOLDER = 'uploads'
@@ -179,19 +178,20 @@ def detect_facial_drooping(img):
     return "Possible Facial Drooping Detected" if asymmetry > 30 else "No Facial Drooping Detected"
 
 def handle_detection_result(result):
-    # Check if condition is detected
-    is_detected = (
-        isinstance(result, dict) and result.get('result', '').lower().find('has diabetes') != -1
-    ) or (
-        isinstance(result, str) and (
-            result.lower().find('detected') != -1 or
-            result.lower().find('moderate') != -1 or
-            result.lower().find('mild') != -1
-        )
-    )
+    print(f"Handling detection result: {result}")
     
-    # Control Arduino LEDs
-    arduino.set_led(is_detected)
+    message = ""
+    if isinstance(result, dict):
+        message = result.get('result', '')
+    elif isinstance(result, str):
+        message = result
+    
+    low = message.lower()
+    is_detected = ("detected" in low or "diabetes" in low) and not low.startswith("no")
+    
+    if is_detected:
+        speak_disease(message)
+    
     return result
 
 @app.route('/')
@@ -286,10 +286,6 @@ def predict_diabetes_route():
     
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-
-# Cleanup Arduino connection when app exits
-import atexit
-atexit.register(lambda: arduino.close())
 
 if __name__ == '__main__':
     app.run(debug=True)
