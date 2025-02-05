@@ -64,7 +64,7 @@ def detect_eyes(img):
         red_mask = cv2.inRange(hsv, np.array([0, 120, 70]), np.array([10, 255, 255]))
         red_ratio = np.sum(red_mask > 0) / (w * h)
         if red_ratio > 0.1:
-            return "Conjunctivitis (Pink Eye) Detected"
+            return "Conjunctivitis Detected"
     return "No Conjunctivitis Detected"
 
 def detect_jaundice(img):
@@ -194,6 +194,17 @@ def handle_detection_result(result):
     
     return result
 
+def get_remedies(disease):
+    remedies = {
+        "diabetes": "Maintain a healthy diet, exercise regularly, monitor blood sugar levels, and take prescribed medications.",
+        "conjunctivitis": "Use prescribed eye drops, maintain eye hygiene, and avoid touching your eyes.",
+        "jaundice": "Stay hydrated, eat a balanced diet, and avoid alcohol.",
+        "acne": "Keep your skin clean, use acne treatments, and avoid oily foods.",
+        "cyanosis": "Seek medical attention immediately, as it may indicate a serious condition.",
+        "facial drooping": "Consult a doctor for a proper diagnosis and treatment plan."
+    }
+    return remedies.get(disease.lower(), "No specific remedies available.")
+
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -281,6 +292,10 @@ def predict_diabetes_route():
             'result': "Patient has diabetes" if prediction == 1 else "Patient doesn't have diabetes",
             'probability': f"{probability*100:.2f}%"
         }
+        
+        if prediction == 1:
+            result['remedies'] = get_remedies("diabetes")
+        
         result = handle_detection_result(result)
         return jsonify(result)
     
